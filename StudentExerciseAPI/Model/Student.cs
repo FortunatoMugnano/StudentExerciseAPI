@@ -1,26 +1,22 @@
 ﻿using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 
 namespace StudentExerciseAPI.Model
 {
     public class Student
     {
 
-
-
-        /*
-        public Student(int id, string firstName, string lastname, string slack, Cohort cohort)
-        {
-            Id = id;
-            FirstName = firstName;
-            LastName = lastname;
-            SlackHandle = slack;
-            CohortId = cohort;
-        }
-        */
-
         public int Id { get; set; }
+        [Required(ErrorMessage = "Student First Name is required")]
+        [StringLength(15, MinimumLength = 2, ErrorMessage = "Student First Name should be between 2 and 15 characters")]
         public string FirstName { get; set; }
+
+        [Required(ErrorMessage = "Student Last Name is required")]
+        [StringLength(15, MinimumLength = 2, ErrorMessage = "Student Last Name should be between 2 and 15 characters")]
         public string LastName { get; set; }
+
+        [Required(ErrorMessage = "Student SlackHandle is required")]
+        [StringLength(12, MinimumLength = 3, ErrorMessage = "Student SlackHandle should be between 3 and 12 characters")]
         public string SlackHandle { get; set; }
         public Cohort Cohort { get; set; }
 
