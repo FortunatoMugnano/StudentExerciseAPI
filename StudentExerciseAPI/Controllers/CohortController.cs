@@ -29,7 +29,7 @@ namespace StudentExerciseAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAllCohorts()
+        public async Task<IActionResult> GetAllCohorts([FromQuery] string name)
         {
             using (SqlConnection conn = Connection)
             {
@@ -40,7 +40,13 @@ namespace StudentExerciseAPI.Controllers
                                       s.id as StudentID, s.FirstName as StudentFirst, s.LastName as StudentLast, s.SlackHandle as StudentSlack, s.cohortId as StudentCohortID 
                                       FROM cohort
                                       LEFT JOIN student as s ON cohort.id = s.cohortId  
-                                      LEFT JOIN instructor as i ON cohort.id = i.cohortId";
+                                      LEFT JOIN instructor as i ON cohort.id = i.cohortId
+                                      WHERE 1=1";
+                    if (name != null)
+                    {
+                        cmd.CommandText += " AND cohort.name LIKE @name";
+                        cmd.Parameters.Add(new SqlParameter(@"name", "%" + name + "%"));
+                    }
                     SqlDataReader reader = cmd.ExecuteReader();
 
                     List<Cohort> cohorts = new List<Cohort>();
@@ -48,7 +54,6 @@ namespace StudentExerciseAPI.Controllers
                     {
                         int currentCohortID = reader.GetInt32(reader.GetOrdinal("CohortID"));
                         Cohort newCohort = cohorts.FirstOrDefault(i => i.Id == currentCohortID);
-                        //If there's no cohort, create one and add it to the list.
                         if (newCohort == null)
                         {
                             newCohort = new Cohort
@@ -61,7 +66,6 @@ namespace StudentExerciseAPI.Controllers
                             cohorts.Add(newCohort);
                         }
 
-                        //Add new student in Instructor's cohort list
                         int currentStudentID = reader.GetInt32(reader.GetOrdinal("StudentID"));
                         foreach (Cohort cohort in cohorts)
                         {
@@ -78,7 +82,6 @@ namespace StudentExerciseAPI.Controllers
                             }
                         }
 
-                        //Check if cohort matches instructor cohort id
                         int currentInstructorID = reader.GetInt32(reader.GetOrdinal("InstructorID"));
                         foreach (Cohort cohort in cohorts)
                         {

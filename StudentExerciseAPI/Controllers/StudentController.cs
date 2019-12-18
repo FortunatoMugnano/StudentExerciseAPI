@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using StudentExerciseAPI.Model;
 using System.Collections.Generic;
 using System.Data.SqlClient;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace StudentExerciseAPI.Controllers
@@ -27,7 +28,7 @@ namespace StudentExerciseAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> Get([FromQuery]string include)
+        public async Task<IActionResult> Get([FromQuery]string include, [FromQuery]string firstName, [FromQuery]string lastName, [FromQuery] string slackHandle)
         {
             using (SqlConnection conn = Connection)
             {
@@ -35,77 +36,119 @@ namespace StudentExerciseAPI.Controllers
                 using (SqlCommand cmd = conn.CreateCommand())
                 {   
                     
-                    if (include != null)
-                    {
-                        if (include == "exercise")
-                        {
+                    
+                        
                             cmd.CommandText += @"SELECT s.Id, s.FirstName, s.LastName, s.SlackHandle, s.CohortId, c.Name AS CohortName,
                                                  e.Id AS ExerciseId, e.Language, e.Name
                                                  FROM Student s
                                                  INNER JOIN Cohort c On s.CohortId = c.Id
                                                  INNER JOIN StudentExercise se ON se.StudentId = s.Id 
-                                                 INNER JOIN Exercise e ON se.ExerciseId = e.Id";
+                                                 INNER JOIN Exercise e ON se.ExerciseId = e.Id
+                                                 WHERE 1=1
+                                                 ";
+                            if (firstName != null)
+                            {
+                                cmd.CommandText += " AND s.FirstName LIKE @FirstName";
+                                cmd.Parameters.Add(new SqlParameter(@"FirstName", firstName));
+                            }
+
+                            if (lastName != null)
+                            {
+                                cmd.CommandText += " AND s.LastName LIKE @LastName";
+                                cmd.Parameters.Add(new SqlParameter(@"LastName", "%" + lastName + "%"));
+                            }
+
+                            if (slackHandle != null)
+                            {
+                                cmd.CommandText += " AND s.SlackHandle LIKE @SlackHandle";
+                                cmd.Parameters.Add(new SqlParameter(@"SlackHandle", "%" + slackHandle + "%"));
+                            }
+
                         
-                        }
-                    }else
-                    {
-                        cmd.CommandText = @"SELECT s.Id, s.FirstName, s.LastName, s.SlackHandle, s.CohortId, c.Name AS CohortName
-                                      FROM Student s
-                                      INNER JOIN Cohort c On s.CohortId = c.Id
-                                      ";
-                    }
+                   
+                 
                     SqlDataReader reader = cmd.ExecuteReader();
                     List<Student> students = new List<Student>();
 
                     while (reader.Read())
                     {
-                       
-
-                        //Cohort
-                        int idColumnPosition = reader.GetOrdinal("CohortId");
-                        int idValue = reader.GetInt32(idColumnPosition);
-
-                        int nameColonPosition = reader.GetOrdinal("CohortName");
-                        string cohortNameValue = reader.GetString(nameColonPosition);
-
-                        //Student
-                        Student student = new Student
+                        var studentId = reader.GetInt32(reader.GetOrdinal("Id"));
+                        //search to see if student is already added
+                        var studentAlreadyAdded = students.FirstOrDefault(s => s.Id == studentId);
+                        //create bool for if there is an exercise in row
+                        var hasExercise = !reader.IsDBNull(reader.GetOrdinal("ExerciseId"));
+                        //if statement for adding new student, null means they were NOT found, let's add them!
+                        if (studentAlreadyAdded == null)
                         {
-                            Id = reader.GetInt32(reader.GetOrdinal("Id")),
-                            FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
-                            LastName = reader.GetString(reader.GetOrdinal("LastName")),
-                            SlackHandle = reader.GetString(reader.GetOrdinal("SlackHandle")),
-                            CohortId = reader.GetInt32(reader.GetOrdinal("CohortId")),
-                            Cohort = new Cohort
+
+                            Student student = new Student
                             {
-                                Id = idValue,
-                                Name = cohortNameValue
-                            },
-                        
-                        };
+                                Id = reader.GetInt32(reader.GetOrdinal("Id")),
+                                CohortId = reader.GetInt32(reader.GetOrdinal("CohortId")),
+                                LastName = reader.GetString(reader.GetOrdinal("LastName")),
+                                FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
+                                SlackHandle = reader.GetString(reader.GetOrdinal("SlackHandle")),
+                                Exercises = new List<Exercise>(),
 
-                        if (include != null)
-                        {
-                            //Exercise
-                            int idExerciseValue = reader.GetInt32(reader.GetOrdinal("ExerciseId"));
-                            string nameValue = reader.GetString(reader.GetOrdinal("Name"));
-                            string languageValue = reader.GetString(reader.GetOrdinal("Language"));
-                            List<Exercise> exercises = new List<Exercise>();
-                            Exercise newExercise = new Exercise(idExerciseValue, nameValue, languageValue);
-                            exercises.Add(newExercise);
-                            student.Exercises = exercises;
+                            };
+                            students.Add(student);
+
+                            var hasCohort = !reader.IsDBNull(reader.GetOrdinal("CohortId"));
+
+                            if (hasCohort)
+                            {
+                                student.Cohort = new Cohort()
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("CohortId")),
+                                    Name = reader.GetString(reader.GetOrdinal("CohortName"))
+
+                                };
+                            }
+
+                            //If row has an exercise AND the query param "include" = exercises, then add it to the exercise list
+                            if (hasExercise && include == "exercises")
+                            {
+                                student.Exercises.Add(new Exercise()
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("ExerciseId")),
+                                    Name = reader.GetString(reader.GetOrdinal("Name")),
+                                    Language = reader.GetString(reader.GetOrdinal("Language"))
+                                });
+
+                            }
                         }
+                        else
+                        //Student was already added!  Lets check to see if there are exercises to add and assign a Cohort
+                        {
+                            var hasCohort = !reader.IsDBNull(reader.GetOrdinal("CohortId"));
 
-                        students.Add(student);
-                    };
+                            if (hasCohort)
+                            {
+                                studentAlreadyAdded.Cohort = new Cohort()
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("CohortId")),
+                                    Name = reader.GetString(reader.GetOrdinal("CohortName"))
 
+                                };
+                            }
 
+                            if (hasExercise && include == "exercises")
+                            {
+                                studentAlreadyAdded.Exercises.Add(new Exercise()
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("ExerciseId")),
+                                    Name = reader.GetString(reader.GetOrdinal("Name")),
+                                    Language = reader.GetString(reader.GetOrdinal("Language"))
+                                });
 
-
-
+                            }
+                        }
+                    }
                     reader.Close();
-
+                   
                     return Ok(students);
+
+                 
                 }
             }
         }
@@ -206,61 +249,7 @@ namespace StudentExerciseAPI.Controllers
             }
         }
 
-        [HttpGet]
-        [Route("studentExercise")]
-        public async Task<IActionResult> GetStudentExercise([FromQuery]string include, [FromQuery]int? exerciseID)
-        {
-            using (SqlConnection conn = Connection)
-            {
-                conn.Open();
-                using (SqlCommand cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = @"SELECT s.Id, s.FirstName, s.LastName, s.SlackHandle, s.CohortId, c.Name AS CohortName, +
-                                      e.Id AS ExerciseId, e.Language, e.Name
-                                      FROM Student s
-                                      INNER JOIN Cohort c On s.CohortId = c.Id
-                                      INNER JOIN StudentExercise se ON se.StudentId = s.Id
-                                      INNER JOIN Exercise e ON se.ExerciseId = e.Id
-                                      WHERE 1=1
-                                      GROUP BY s.Id, s.FirstName, s.LastName, s.SlackHandle, s.CohortId, c.Name, e.Language, e.Name, e.Id"
-                                      ;
-                    if (exerciseID != null)
-                    {
-                        cmd.CommandText += " AND ExerciseId = @exerciseId";
-                        cmd.Parameters.Add(new SqlParameter("@exerciseId", exerciseID));
-                    }
-                    SqlDataReader reader = cmd.ExecuteReader();
-
-                   
-                    List<Student> allStudents = new List<Student>();
-                    while (reader.Read())
-                    {
-
-                        int idValue = reader.GetInt32(reader.GetOrdinal("ExerciseId"));
-                        string nameValue = reader.GetString(reader.GetOrdinal("Name"));
-                        string languageValue = reader.GetString(reader.GetOrdinal("Language"));
-                        List<Exercise> exercises = new List<Exercise>();
-                        Exercise newExercise = new Exercise(idValue, nameValue, languageValue);
-                        exercises.Add(newExercise);
-
-
-                        Student stu = new Student
-                        {
-                            Id = reader.GetInt32(reader.GetOrdinal("Id")),
-                            FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
-                            LastName = reader.GetString(reader.GetOrdinal("LastName")),
-                            SlackHandle = reader.GetString(reader.GetOrdinal("SlackHandle")),
-                            CohortId = reader.GetInt32(reader.GetOrdinal("CohortId")),
-                            Exercises = exercises
-                    };
-                        allStudents.Add(stu);
-                    }
-                    reader.Close();
-                    return Ok(allStudents);
-                }
-            }
-        }
-        */
+       */
 
         private bool StudentExist(int id)
         {

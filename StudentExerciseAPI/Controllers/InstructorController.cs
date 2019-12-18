@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using StudentExerciseAPI.Model;
 using System.Collections.Generic;
 using System.Data.SqlClient;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace StudentExerciseAPI.Controllers
@@ -27,47 +28,85 @@ namespace StudentExerciseAPI.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> Get()
+        public async Task<IActionResult> Get([FromQuery]string firstName, [FromQuery]string lastName, [FromQuery] string slackHandle)
         {
             using (SqlConnection conn = Connection)
             {
                 conn.Open();
                 using (SqlCommand cmd = conn.CreateCommand())
                 {
-                    cmd.CommandText = @"SELECT s.Id, s.FirstName, s.LastName, s.SlackHandle,s.Speciality, s.CohortId as InstructorCohortId, c.Id as CohortId, c.Name
-                                        FROM Instructor s
-                                        LEFT JOIN Cohort c on c.id = s.CohortId";
+                    cmd.CommandText = @"SELECT i.Id as InstructorId, i.FirstName, i.LastName, i.SlackHandle, i.Speciality, i.CohortId as InstructorCohortId, c.Id as CohortId, c.Name
+                                        FROM Instructor i
+                                        LEFT JOIN Cohort c on c.id = i.CohortId
+                                        WHERE 1=1";
+                    if (firstName != null)
+                    {
+                        cmd.CommandText += " AND i.FirstName LIKE @FirstName";
+                        cmd.Parameters.Add(new SqlParameter(@"FirstName", firstName));
+                    }
+
+                    if (lastName != null)
+                    {
+                        cmd.CommandText += " AND i.LastName LIKE @LastName";
+                        cmd.Parameters.Add(new SqlParameter(@"LastName", "%" + lastName + "%"));
+                    }
+
+                    if (slackHandle != null)
+                    {
+                        cmd.CommandText += " AND i.SlackHandle LIKE @SlackHandle";
+                        cmd.Parameters.Add(new SqlParameter(@"SlackHandle", "%"+ slackHandle +"%"));
+                    }
                     SqlDataReader reader = cmd.ExecuteReader();
                     List<Instructor> instructors = new List<Instructor>();
 
                     while (reader.Read())
                     {
-                        int idColumnPosition = reader.GetOrdinal("CohortId");
-                        int idValue = reader.GetInt32(idColumnPosition);
+                        var instructorId = reader.GetInt32(reader.GetOrdinal("InstructorId"));
+                        Instructor instructorAlreadyAdded = instructors.FirstOrDefault(i => i.Id == instructorId);
 
-                        int nameColonPosition = reader.GetOrdinal("Name");
-                        string cohortNameValue = reader.GetString(nameColonPosition);
-                        Instructor instructor = new Instructor
+                        if (instructorAlreadyAdded == null)
                         {
-                            Id = reader.GetInt32(reader.GetOrdinal("Id")),
-                            FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
-                            LastName = reader.GetString(reader.GetOrdinal("LastName")),
-                            SlackHandle = reader.GetString(reader.GetOrdinal("SlackHandle")),
-                            CohortId = reader.GetInt32(reader.GetOrdinal("InstructorCohortId")),
-                            Specialty = reader.GetString(reader.GetOrdinal("Speciality")),
-                            Cohort = new Cohort
+
+                            Instructor newInstructor = new Instructor
                             {
-                                Id = idValue,
-                                Name = cohortNameValue
+                                Id = reader.GetInt32(reader.GetOrdinal("InstructorId")),
+                                FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
+                                LastName = reader.GetString(reader.GetOrdinal("LastName")),
+                                SlackHandle = reader.GetString(reader.GetOrdinal("SlackHandle")),
+                                CohortId = reader.GetInt32(reader.GetOrdinal("InstructorCohortID")),
+                                Specialty = reader.GetString(reader.GetOrdinal("Speciality")),
+                              
+                            };
+                            instructors.Add(newInstructor);
+
+                            var hasCohort = !reader.IsDBNull(reader.GetOrdinal("CohortId"));
+
+                            if (hasCohort)
+                            {
+                                newInstructor.Cohort = new Cohort()
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("CohortId")),
+                                    Name = reader.GetString(reader.GetOrdinal("Name"))
+
+                                };
                             }
-                        };
-                        instructors.Add(instructor);
+                        }else
+                        {
+                            var hasCohort = !reader.IsDBNull(reader.GetOrdinal("CohortId"));
+
+                            if (hasCohort)
+                            {
+                                instructorAlreadyAdded.Cohort = new Cohort()
+                                {
+                                    Id = reader.GetInt32(reader.GetOrdinal("CohortId")),
+                                    Name = reader.GetString(reader.GetOrdinal("Name"))
+
+                                };
+                            }
+                        }
+                       
+                      
                     };
-
-
-
-
-
                     reader.Close();
 
                     return Ok(instructors);

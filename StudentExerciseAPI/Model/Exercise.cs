@@ -7,6 +7,7 @@ namespace StudentExerciseAPI.Model
 {
     public class Exercise
     {
+        /*
         public Exercise(int id, string name, string language)
         {
             Id = id;
@@ -15,12 +16,13 @@ namespace StudentExerciseAPI.Model
 
 
         }
+        */
 
         public int Id { get; set; }
         public string Name { get; set; }
         public string Language { get; set; }
 
-        public List<Student> Students { get; set; }
+        public List<Student> Students { get; set; } = new List<Student>();
 
     }
 }

@@ -31,7 +31,7 @@ namespace StudentExerciseAPI.Controllers
 
 
         [HttpGet]
-        public async Task<IActionResult> Get(string include, string search)
+        public async Task<IActionResult> Get([FromQuery] string include, [FromQuery] string name, [FromQuery] string language)
         {
             using (SqlConnection conn = Connection)
             {
@@ -39,22 +39,32 @@ namespace StudentExerciseAPI.Controllers
                 using (SqlCommand cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = @"SELECT Exercise.Id as ExerciseID, Exercise.Name as ExerciseName, Exercise.Language as ExerciseLanguage";
-                    if (include == "students")
-                    {
+                      if (include == "students")
+                      {
                         cmd.CommandText += @", se.StudentId as StudentExerciseStudentID, se.exerciseId as StudentExerciseExerciseID, 
                         s.Id, s.FirstName, s.LastName, s.SlackHandle";
-                    }
+                        
+                      }
                     cmd.CommandText += " FROM Exercise";
-                    if (include == "students")
-                    {
-                        cmd.CommandText += @" LEFT JOIN Studentexercise as se ON Exercise.Id = se.exerciseId
-                                              INNER JOIN Student as s ON se.studentId = s.Id";
-                    }
-                    if (search != null)
-                    {
-                        cmd.CommandText += $" WHERE exercise.Name LIKE '%{search}%' OR exercise.Language LIKE '%{search}%'";
-                    }
-
+                      if (name != null)
+                      {
+                        cmd.CommandText += @" WHERE exercise.Name LIKE @name";
+                        cmd.Parameters.Add(new SqlParameter("@name", "%" + name + "%"));
+                      }
+                      if (language != null)
+                      {
+                        cmd.CommandText += @" WHERE exercise.Language LIKE @language";
+                        cmd.Parameters.Add(new SqlParameter("@language", "%" + language + "%"));
+                      }
+                        if (include == "students")
+                        {
+                          cmd.CommandText += @" LEFT JOIN Studentexercise as se ON Exercise.Id = se.exerciseId
+                                              INNER JOIN Student as s ON se.studentId = s.Id
+                                              WHERE 1=1";
+                         
+                        }
+                    
+                    
                     SqlDataReader reader = cmd.ExecuteReader();
                     List<Exercise> exercises = new List<Exercise>();
 
@@ -69,7 +79,14 @@ namespace StudentExerciseAPI.Controllers
 
                         if (newExercise == null)
                         {
-                            newExercise = new Exercise(currentExerciseID, nameValue, languageValue);
+                            newExercise = new Exercise
+                            { Id = currentExerciseID,
+                            Name = nameValue, 
+                            Language = languageValue
+                            
+                            
+                            };
+                            
                         }
 
 
@@ -79,26 +96,28 @@ namespace StudentExerciseAPI.Controllers
 
 
                         exercises.Add(newExercise);
-                    }
 
-                    if (include == "students")
-                    {
-
-                        int currentStudentID = reader.GetInt32(reader.GetOrdinal("Id"));
-                        foreach (Exercise exer in exercises)
+                        if (include == "students")
                         {
-                            if (exer.Id == reader.GetInt32(reader.GetOrdinal("StudentExerciseExerciseID")) && exer.Students.FirstOrDefault(s => s.Id == currentStudentID) == null)
+
+                            int currentStudentID = reader.GetInt32(reader.GetOrdinal("Id"));
+                            foreach (Exercise exer in exercises)
                             {
-                                exer.Students.Add(new Student
+                                if (exer.Id == reader.GetInt32(reader.GetOrdinal("StudentExerciseExerciseID")) && exer.Students.FirstOrDefault(s => s.Id == currentStudentID) == null)
                                 {
-                                    Id = currentStudentID,
-                                    FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
-                                    LastName = reader.GetString(reader.GetOrdinal("LastName")),
-                                    SlackHandle = reader.GetString(reader.GetOrdinal("SlackHandle")),
-                                });
+                                    exer.Students.Add(new Student
+                                    {
+                                        Id = currentStudentID,
+                                        FirstName = reader.GetString(reader.GetOrdinal("FirstName")),
+                                        LastName = reader.GetString(reader.GetOrdinal("LastName")),
+                                        SlackHandle = reader.GetString(reader.GetOrdinal("SlackHandle")),
+                                    });
+                                }
                             }
                         }
                     }
+
+                   
 
                     reader.Close();
 
@@ -131,7 +150,13 @@ namespace StudentExerciseAPI.Controllers
                         string nameValue = reader.GetString(reader.GetOrdinal("Name"));
                         string languageValue = reader.GetString(reader.GetOrdinal("Language"));
 
-                        exercise = new Exercise(idValue, nameValue, languageValue);
+                        exercise = new Exercise
+                        {
+                            Id= idValue,
+                            Name = nameValue,
+                            Language = languageValue
+
+                        };
 
 
                     };
